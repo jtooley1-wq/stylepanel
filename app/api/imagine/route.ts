@@ -9,10 +9,8 @@ const grok = new OpenAI({
 export async function POST(req: NextRequest) {
   try {
     const { suggestion, imageBase64 } = await req.json();
-    
-    console.log("Received image base64 length:", imageBase64?.length);
 
-    // Create an animation prompt that explicitly preserves the source image
+    // Create an animation prompt based on the fashion suggestion
     const promptResponse = await grok.chat.completions.create({
       model: "grok-3",
       messages: [
@@ -20,7 +18,7 @@ export async function POST(req: NextRequest) {
           role: "user",
           content: `Based on this fashion advice: "${suggestion}"
 
-Create a simple animation prompt (1 sentence) for animating THIS EXACT PHOTO. The animation should show subtle natural movement like the person slightly turning their head, smiling, or adjusting their pose. Do NOT describe changing clothes or appearance - just describe simple animation of the existing image. Example: "Animate this photo with the person slowly turning their head and giving a warm smile." Start with "Animate this photo with..."`,
+Create a short, vivid video animation prompt (1-2 sentences) that describes the person in the photo confidently modeling and showing off the style. Include natural movement like turning to show different angles, adjusting an accessory, or striking a pose. Make it feel like a fashion showcase. Example: "The person turns elegantly to display their outfit from all angles, then strikes a confident pose with a subtle smile." Start directly with the animation description.`,
         },
       ],
     });
@@ -78,12 +76,10 @@ Create a simple animation prompt (1 sentence) for animating THIS EXACT PHOTO. Th
       });
       
       const statusData = await statusResponse.json();
-      console.log(`Poll attempt ${attempts + 1}:`, statusData.status || "video ready");
       
       if (statusData.status === "done" || statusData.video?.url) {
         const videoUrl = statusData.video?.url;
         if (videoUrl) {
-          console.log("Video ready:", videoUrl);
           return NextResponse.json({ videoUrl, prompt: videoPrompt });
         }
       }
