@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { put } from '@vercel/blob';
 
 const grok = new OpenAI({
   apiKey: process.env.XAI_API_KEY,
@@ -10,6 +11,15 @@ export async function POST(req: NextRequest) {
   try {
     const { suggestion, imageBase64 } = await req.json();
 
+    // Upload image to Vercel Blob to get a public URL
+    const buffer = Buffer.from(imageBase64, 'base64');
+    const blob = await put(`stylepanel-${Date.now()}.jpg`, buffer, {
+      access: 'public',
+      contentType: 'image/jpeg',
+    });
+    
+    console.log("Image uploaded to:", blob.url);
+
     // Create an animation prompt based on the fashion suggestion
     const promptResponse = await grok.chat.completions.create({
       model: "grok-3",
@@ -18,7 +28,7 @@ export async function POST(req: NextRequest) {
           role: "user",
           content: `Based on this fashion advice: "${suggestion}"
 
-Create a short, vivid video animation prompt (1-2 sentences) that describes the person in the photo confidently modeling and showing off the style. Include natural movement like turning to show different angles, adjusting an accessory, or striking a pose. Make it feel like a fashion showcase. Example: "The person turns elegantly to display their outfit from all angles, then strikes a confident pose with a subtle smile." Start directly with the animation description.`,
+Create a short video animation prompt (1-2 sentences) describing the person in THIS PHOTO modeling the style. Include natural movement like turning, posing, or adjusting clothing. Example: "The person turns elegantly to show their outfit, adjusting their collar with a confident smile." Start directly with the description.`,
         },
       ],
     });
@@ -26,15 +36,15 @@ Create a short, vivid video animation prompt (1-2 sentences) that describes the 
     const videoPrompt = promptResponse.choices[0].message.content || "";
     console.log("Video prompt:", videoPrompt);
 
-    const imageUrl = `data:image/jpeg;base64,${imageBase64}`;
-
-    // Start video generation with image-to-video
+    // Start video generation with the public image URL
     const requestBody = {
       model: "grok-imagine-video",
       prompt: videoPrompt,
-      image_url: imageUrl,
+      image_url: blob.url,
       duration: 6,
     };
+    
+    console.log("Sending to xAI with image_url:", blob.url);
 
     const startResponse = await fetch("https://api.x.ai/v1/videos/generations", {
       method: "POST",
