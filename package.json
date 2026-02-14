@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
+    "@fal-ai/client": "^1.9.1",
     "@google/generative-ai": "^0.24.1",
     "@vercel/blob": "^2.2.0",
     "class-variance-authority": "^0.7.1",
