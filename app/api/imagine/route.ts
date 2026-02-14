@@ -20,20 +20,9 @@ export async function POST(req: NextRequest) {
     
     console.log("Image uploaded to:", blob.url);
 
-    // Create an animation prompt based on the fashion suggestion
-    const promptResponse = await grok.chat.completions.create({
-      model: "grok-3",
-      messages: [
-        {
-          role: "user",
-          content: `Based on this fashion advice: "${suggestion}"
-
-Create a short video animation prompt (1-2 sentences) describing the person in THIS PHOTO modeling the style. Include natural movement like turning, posing, or adjusting clothing. Example: "The person turns elegantly to show their outfit, adjusting their collar with a confident smile." Start directly with the description.`,
-        },
-      ],
-    });
-
-    const videoPrompt = promptResponse.choices[0].message.content || "";
+    // Very simple animation prompt - just describe motion, not content
+    const videoPrompt = "Animate this image with subtle natural movement. The person slowly turns their head slightly, blinks naturally, and gives a gentle smile. Camera holds steady.";
+    
     console.log("Video prompt:", videoPrompt);
 
     // Start video generation with the public image URL
@@ -42,9 +31,10 @@ Create a short video animation prompt (1-2 sentences) describing the person in T
       prompt: videoPrompt,
       image_url: blob.url,
       duration: 6,
+      resolution: "720p",
     };
     
-    console.log("Sending to xAI with image_url:", blob.url);
+    console.log("Request body:", JSON.stringify({...requestBody, image_url: blob.url.substring(0, 50) + "..."}));
 
     const startResponse = await fetch("https://api.x.ai/v1/videos/generations", {
       method: "POST",
