@@ -38,10 +38,14 @@ export default function Home() {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [submittedPreview, setSubmittedPreview] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isImagining, setIsImagining] = useState(false);
   const [feedback, setFeedback] = useState<Feedback[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  
+  // Transformation states
+  const [transformStage, setTransformStage] = useState<"idle" | "editing" | "animating" | "complete">("idle");
+  const [editedImage, setEditedImage] = useState<string | null>(null);
   const [transformedVideo, setTransformedVideo] = useState<string | null>(null);
+  
   const [agentStatuses, setAgentStatuses] = useState<Record<AgentId, AgentStatus>>({
     claude: { status: "waiting", text: "Awaiting..." },
     grok: { status: "waiting", text: "Awaiting..." },
@@ -83,6 +87,8 @@ export default function Home() {
       setPreview(null);
       setSelectedIndex(null);
       setTransformedVideo(null);
+      setEditedImage(null);
+      setTransformStage("idle");
     }
   };
 
@@ -104,6 +110,8 @@ export default function Home() {
     setFeedback([]);
     setSelectedIndex(null);
     setTransformedVideo(null);
+    setEditedImage(null);
+    setTransformStage("idle");
     setSubmittedPreview(preview);
     resetAgentStatuses();
 
@@ -166,28 +174,59 @@ export default function Home() {
   const handleImagine = async () => {
     const selected = initialFeedback[selectedIndex!];
     if (!selected || !submittedPreview) return;
-    setIsImagining(true);
+    
+    setTransformStage("editing");
+    setEditedImage(null);
     setTransformedVideo(null);
     
     try {
-      const response = await fetch("/api/imagine", {
+      // Step 1: Edit the image
+      const editResponse = await fetch("/api/imagine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           suggestion: selected.body,
           imageBase64: submittedPreview.split(",")[1],
+          step: "edit",
         }),
       });
-      const data = await response.json();
-      if (data.videoUrl) {
-        setTransformedVideo(data.videoUrl);
-      } else if (data.error) {
-        console.error("Imagine error:", data.error);
+      
+      const editData = await editResponse.json();
+      
+      if (editData.error) {
+        console.error("Edit error:", editData.error);
+        setTransformStage("idle");
+        return;
       }
+      
+      // Show edited image immediately
+      setEditedImage(editData.editedImageUrl);
+      setTransformStage("animating");
+      
+      // Step 2: Animate the edited image
+      const animateResponse = await fetch("/api/animate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          editedImageUrl: editData.editedImageUrl,
+        }),
+      });
+      
+      const animateData = await animateResponse.json();
+      
+      if (animateData.error) {
+        console.error("Animate error:", animateData.error);
+        // Still show the edited image even if animation fails
+        setTransformStage("complete");
+        return;
+      }
+      
+      setTransformedVideo(animateData.videoUrl);
+      setTransformStage("complete");
+      
     } catch (err) {
       console.error("Imagine failed:", err);
-    } finally {
-      setIsImagining(false);
+      setTransformStage("idle");
     }
   };
 
@@ -328,15 +367,16 @@ export default function Home() {
               <div className="space-y-4">
                 {initialFeedback.map((f, i) => {
                   const isSelected = selectedIndex === i;
+                  const isDisabled = transformStage !== "idle" && transformStage !== "complete";
                   return (
                     <div 
                       key={i} 
-                      onClick={() => setSelectedIndex(i)}
-                      className={`p-5 border-l-4 cursor-pointer transition-all hover:bg-amber-50/70 ${agentConfig[f.agent]?.borderColor || "border-stone-400"} ${
+                      onClick={() => !isDisabled && setSelectedIndex(i)}
+                      className={`p-5 border-l-4 transition-all ${agentConfig[f.agent]?.borderColor || "border-stone-400"} ${
                         isSelected 
                           ? "bg-amber-100/80 ring-2 ring-amber-600" 
                           : "bg-white/50"
-                      }`}
+                      } ${isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-amber-50/70"}`}
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-lg">{agentConfig[f.agent]?.icon}</span>
@@ -353,34 +393,84 @@ export default function Home() {
                 })}
               </div>
               
-              {selectedIndex !== null && (
+              {selectedIndex !== null && transformStage === "idle" && (
                 <Button 
                   onClick={handleImagine}
-                  disabled={isImagining}
                   className="w-full mt-6 bg-stone-800 hover:bg-stone-900 text-stone-50 py-6 text-lg font-serif tracking-wide rounded-none"
                 >
-                  {isImagining ? "✦ Creating your transformation... (this may take a minute)" : "✦ Bring This Look to Life"}
+                  ✦ Bring This Look to Life
                 </Button>
               )}
               
-              {transformedVideo && (
+              {/* Transformation Progress */}
+              {transformStage !== "idle" && (
                 <div className="mt-8 pt-8 border-t-2 border-amber-800/20">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-800/30 to-transparent" />
-                    <h3 className="font-serif text-sm uppercase tracking-[0.3em] text-stone-600">Your Transformation</h3>
-                    <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-800/30 to-transparent" />
-                  </div>
-                  <video 
-                    src={transformedVideo} 
-                    controls 
-                    autoPlay 
-                    loop
-                    className="max-h-[500px] mx-auto shadow-lg rounded"
-                  />
+                  {/* Progress indicator */}
+                  {transformStage !== "complete" && (
+                    <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-5 h-5 border-2 border-amber-800/30 border-t-amber-800 rounded-full animate-spin" />
+                        <span className="font-serif font-semibold text-amber-900">
+                          {transformStage === "editing" && "✨ Applying style changes to your photo..."}
+                          {transformStage === "animating" && "🎬 Creating your fashion video..."}
+                        </span>
+                      </div>
+                      <p className="text-amber-800 text-sm font-serif ml-8">
+                        ⚠️ Please stay on this page — your transformation is being created
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Show edited image as soon as it's ready */}
+                  {editedImage && (
+                    <div className="mb-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-800/30 to-transparent" />
+                        <h3 className="font-serif text-sm uppercase tracking-[0.3em] text-stone-600">
+                          Your New Look
+                        </h3>
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-800/30 to-transparent" />
+                      </div>
+                      <img src={editedImage} alt="Your transformed look" className="max-h-[500px] mx-auto shadow-lg rounded" />
+                    </div>
+                  )}
+                  
+                  {/* Show video when ready */}
+                  {transformedVideo && (
+                    <div className="mt-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-800/30 to-transparent" />
+                        <h3 className="font-serif text-sm uppercase tracking-[0.3em] text-stone-600">Your Transformation in Motion</h3>
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-800/30 to-transparent" />
+                      </div>
+                      <video 
+                        src={transformedVideo} 
+                        controls 
+                        autoPlay 
+                        loop
+                        className="max-h-[500px] mx-auto shadow-lg rounded"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Try another button */}
+                  {transformStage === "complete" && (
+                    <Button 
+                      onClick={() => {
+                        setTransformStage("idle");
+                        setEditedImage(null);
+                        setTransformedVideo(null);
+                        setSelectedIndex(null);
+                      }}
+                      className="w-full mt-6 bg-amber-800 hover:bg-amber-900 text-amber-50 py-4 font-serif tracking-wide rounded-none"
+                    >
+                      ✦ Try Another Recommendation
+                    </Button>
+                  )}
                 </div>
               )}
 
-              {additionalThoughts.length > 0 && (
+              {additionalThoughts.length > 0 && transformStage === "idle" && (
                 <>
                   <div className="flex items-center gap-3 my-8">
                     <div className="flex-1 h-px bg-gradient-to-r from-transparent via-amber-800/30 to-transparent" />

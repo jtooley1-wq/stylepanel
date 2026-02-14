@@ -17,7 +17,6 @@ export async function POST(req: NextRequest) {
 
     console.log("Step 1: Creating edit prompt from suggestion...");
     
-    // Create an image edit prompt based on the fashion suggestion
     const editPromptResponse = await grok.chat.completions.create({
       model: "grok-3",
       messages: [
@@ -33,7 +32,6 @@ Create a short, specific image editing instruction (1 sentence) that describes e
     const editPrompt = editPromptResponse.choices[0].message.content || "";
     console.log("Edit prompt:", editPrompt);
 
-    // Step 1: Edit the image using fal.ai's Grok Imagine Image edit
     console.log("Step 2: Editing image with fal.ai...");
     const editResult = await fal.subscribe("xai/grok-imagine-image/edit", {
       input: {
@@ -41,9 +39,6 @@ Create a short, specific image editing instruction (1 sentence) that describes e
         image_url: `data:image/jpeg;base64,${imageBase64}`,
       },
       logs: true,
-      onQueueUpdate: (update) => {
-        console.log("Image edit status:", update.status);
-      },
     });
 
     console.log("Edit result:", JSON.stringify(editResult.data, null, 2));
@@ -54,43 +49,13 @@ Create a short, specific image editing instruction (1 sentence) that describes e
       throw new Error("No edited image URL in response");
     }
 
-    console.log("Edited image URL:", editedImageUrl);
+    // Return just the edited image - animation happens in separate call
+    return NextResponse.json({ editedImageUrl, editPrompt });
 
-    // Step 2: Animate the edited image
-    console.log("Step 3: Animating edited image...");
-    const videoPrompt = "The person confidently turns to show their outfit from different angles, with a subtle smile. Smooth, elegant motion like a fashion showcase.";
-
-    const videoResult = await fal.subscribe("xai/grok-imagine-video/image-to-video", {
-      input: {
-        prompt: videoPrompt,
-        image_url: editedImageUrl,
-        duration: "6",
-        resolution: "720p",
-      },
-      logs: true,
-      onQueueUpdate: (update) => {
-        console.log("Video status:", update.status);
-      },
-    });
-
-    console.log("Video result:", JSON.stringify(videoResult.data, null, 2));
-
-    const videoUrl = videoResult.data?.video?.url;
-    
-    if (!videoUrl) {
-      throw new Error("No video URL in response");
-    }
-
-    return NextResponse.json({ 
-      videoUrl, 
-      editedImageUrl,
-      editPrompt,
-      videoPrompt 
-    });
   } catch (error) {
     console.error("Imagine error:", error);
     return NextResponse.json(
-      { error: "Failed to generate transformation" },
+      { error: "Failed to edit image" },
       { status: 500 }
     );
   }
